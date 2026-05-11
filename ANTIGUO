@@ -132,8 +132,8 @@ gui.ResetOnSpawn = false
 gui.Parent = player:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame", gui)
-main.Size = UDim2.new(0, 220, 0, 445)
-main.Position = UDim2.new(1, -230, 0, 10)
+main.Size = UDim2.new(0, 200, 0, 400)
+main.Position = UDim2.new(1, -210, 0, 10)
 main.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
 main.Active = true
 main.Draggable = true
@@ -168,10 +168,10 @@ img.ImageTransparency = 0
 
 Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 14)
 
-local glow = Instance.new("UIStroke", openBtn)
-glow.Thickness = 4
-glow.Color = Color3.fromRGB(255, 70, 150)
-glow.Transparency = 0.5
+local glowBtn = Instance.new("UIStroke", openBtn)
+glowBtn.Thickness = 4
+glowBtn.Color = Color3.fromRGB(255, 70, 150)
+glowBtn.Transparency = 0.5
 
 local glowOuter = Instance.new("UIStroke", openBtn)
 glowOuter.Thickness = 9
@@ -212,15 +212,15 @@ torsoShotBtn.Font = Enum.Font.GothamBold
 torsoShotBtn.TextSize = 13
 Instance.new("UICorner", torsoShotBtn).CornerRadius = UDim.new(0, 12)
 
-local instaKillBtn = Instance.new("TextButton", main)
-instaKillBtn.Size = UDim2.new(1, -16, 0, 35)
-instaKillBtn.Position = UDim2.new(0, 8, 0, 141)
-instaKillBtn.Text = "INSTA KILL: OFF"
-instaKillBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-instaKillBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
-instaKillBtn.Font = Enum.Font.GothamBold
-instaKillBtn.TextSize = 13
-Instance.new("UICorner", instaKillBtn).CornerRadius = UDim.new(0, 12)
+local killAllBtn = Instance.new("TextButton", main)
+killAllBtn.Size = UDim2.new(1, -16, 0, 35)
+killAllBtn.Position = UDim2.new(0, 8, 0, 141)
+killAllBtn.Text = "KILL ALL: OFF"
+killAllBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+killAllBtn.TextColor3 = Color3.fromRGB(255, 100, 100)
+killAllBtn.Font = Enum.Font.GothamBold
+killAllBtn.TextSize = 13
+Instance.new("UICorner", killAllBtn).CornerRadius = UDim.new(0, 12)
 
 local autoTorsoBtn = Instance.new("TextButton", main)
 autoTorsoBtn.Size = UDim2.new(1, -16, 0, 35)
@@ -388,64 +388,76 @@ if player.Character then
     end
 end
 
-local instaKillEnabled = false
-local KnifeKill = ReplicatedStorage:FindFirstChild("Packages") and ReplicatedStorage.Packages:FindFirstChild("Networking") and ReplicatedStorage.Packages.Networking:FindFirstChild("RE/Combat/KnifeKill")
+local killAllEnabled = false
+local cachedRemotes = {}
+local killAllLoop = nil
 
-instaKillBtn.MouseButton1Click:Connect(function()
-    instaKillEnabled = not instaKillEnabled
-    instaKillBtn.Text = "INSTA KILL: " .. (instaKillEnabled and "ON" or "OFF")
-    instaKillBtn.TextColor3 = instaKillEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
-    instaKillBtn.BackgroundColor3 = instaKillEnabled and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(30, 30, 40)
-end)
-
-local hasTool = false
-local function UpdateToolState()
-    hasTool = false
-    if player.Backpack then
-        for _, v in ipairs(player.Backpack:GetChildren()) do
-            if v.ClassName == "Tool" then
-                hasTool = true
-                break
-            end
-        end
-    end
-    if player.Character then
-        for _, v in ipairs(player.Character:GetChildren()) do
-            if v.ClassName == "Tool" then
-                hasTool = true
-                break
-            end
-        end
-    end
-end
-
-if player.Backpack then
-    player.Backpack.ChildAdded:Connect(UpdateToolState)
-    player.Backpack.ChildRemoved:Connect(UpdateToolState)
-end
-player.CharacterAdded:Connect(function(char)
-    char.ChildAdded:Connect(function(child)
-        if child.ClassName == "Tool" then UpdateToolState() end
-    end)
-    char.ChildRemoved:Connect(function(child)
-        if child.ClassName == "Tool" then UpdateToolState() end
-    end)
-    UpdateToolState()
-end)
-UpdateToolState()
-
-task.spawn(function()
-    while true do
-        if instaKillEnabled and hasTool and KnifeKill then
-            for p in pairs(playerList) do
-                if p ~= player then
-                    pcall(function()
-                        KnifeKill:FireServer(p)
-                    end)
+local function updateRemoteCache()
+    cachedRemotes = {}
+    local areas = {ReplicatedStorage, Workspace, player.Backpack}
+    
+    for _, area in pairs(areas) do
+        pcall(function()
+            for _, obj in ipairs(area:GetDescendants()) do
+                if obj:IsA("RemoteEvent") and (obj.Name:lower():find("kill") or obj.Name:lower():find("knife")) then
+                    table.insert(cachedRemotes, obj)
                 end
             end
+        end)
+    end
+end
+
+local function startKillAll()
+    if killAllLoop then return end
+    updateRemoteCache()
+    
+    killAllLoop = task.spawn(function()
+        while killAllEnabled do
+            if #cachedRemotes > 0 then
+                local currentPlayers = Players:GetPlayers()
+                for _, v in pairs(currentPlayers) do
+                    if not killAllEnabled then break end
+                    if v ~= player and v.Character and v.Character:FindFirstChild("Humanoid") then
+                        if v.Character.Humanoid.Health > 0 then
+                            for _, remote in pairs(cachedRemotes) do
+                                pcall(function()
+                                    if remote and remote.Parent then
+                                        remote:FireServer(v.Character)
+                                        remote:FireServer(v)
+                                        remote:FireServer(v.Character.Humanoid)
+                                        remote:FireServer()
+                                    end
+                                end)
+                            end
+                            task.wait()
+                        end
+                    end
+                end
+            end
+            task.wait(0.1)
         end
-        task.wait(0.3)
+    end)
+end
+
+local function stopKillAll()
+    killAllEnabled = false
+    if killAllLoop then
+        task.cancel(killAllLoop)
+        killAllLoop = nil
+    end
+    cachedRemotes = {}
+end
+
+killAllBtn.MouseButton1Click:Connect(function()
+    killAllEnabled = not killAllEnabled
+    killAllBtn.Text = "KILL ALL: " .. (killAllEnabled and "ON" or "OFF")
+    killAllBtn.TextColor3 = killAllEnabled and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
+    killAllBtn.BackgroundColor3 = killAllEnabled and Color3.fromRGB(0, 60, 0) or Color3.fromRGB(30, 30, 40)
+    
+    if killAllEnabled then
+        startKillAll()
+    else
+        stopKillAll()
     end
 end)
 
